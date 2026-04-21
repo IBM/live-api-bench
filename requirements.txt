@@ -1,0 +1,11 @@
+# Git dependencies
+vakra-benchmark @ git+https://github.com/IBM/vakra.git
+
+# Core third-party dependencies
+pandas
+numpy
+sqlglot
+pydantic
+jinja2
+python-dotenv
+pyyaml
