@@ -12,58 +12,16 @@ import os
 from collections import defaultdict
 from typing import Any
 
-from .execution_helpers import validate_output
+from .execution_helpers import (
+    condense_output,
+    load_skip_configuration,
+    validate_output,
+)
 from .sql_dataset_builder import SqlDatasetBuilder
 
 # Module-level logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-# Default maximum items to display when condensing output
-DEFAULT_CONDENSE_LIMIT = 20
-
-
-def condense_output(data: Any, max_items: int = DEFAULT_CONDENSE_LIMIT) -> Any:
-    """Condense list and dict outputs for logging by limiting the number of items.
-
-    Args:
-        data: The data structure to condense (list, dict, or other type).
-        max_items: Maximum number of items to retain. Defaults to DEFAULT_CONDENSE_LIMIT.
-
-    Returns:
-        Condensed version of the data:
-        - For lists: first max_items elements, with nested lists also condensed
-        - For dicts: first max_items key-value pairs, with nested structures also condensed
-        - For other types: returns data unchanged
-    """
-    if isinstance(data, list):
-        # Truncate outer list and recursively condense each element
-        truncated = data[:max_items]
-        return [condense_output(item, max_items) for item in truncated]
-    elif isinstance(data, dict):
-        # Truncate dict and recursively condense each value
-        truncated_items = list(data.items())[:max_items]
-        return {k: condense_output(v, max_items) for k, v in truncated_items}
-    return data
-
-
-def load_skip_configuration() -> dict[str, Any]:
-    """Load configuration for skipping problematic high-memory data points.
-
-    Reads the high_memory_errors.json file which contains a mapping of database
-    names to data point indices that should be skipped during translation.
-
-    Returns:
-        Dictionary mapping database names to either "all" (skip entire database)
-        or a list of integer indices (skip specific data points).
-
-    Raises:
-        FileNotFoundError: If high_memory_errors.json cannot be found.
-        json.JSONDecodeError: If the JSON file is malformed.
-    """
-    config_path = os.path.join(os.path.dirname(__file__), "high_memory_errors.json")
-    with open(config_path) as f:
-        return json.load(f)
 
 
 def main(

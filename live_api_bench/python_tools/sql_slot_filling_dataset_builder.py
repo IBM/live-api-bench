@@ -5,7 +5,7 @@ from typing import Callable
 import sqlglot
 
 from .database_loader import DatabaseLoader
-from .utils import get_join_sequences, get_tables_and_aliases
+from .sql_utils import get_join_sequences, get_tables_and_aliases
 from environment.m3.python_tools.tools.slot_filling_tools import (
     aggregate_data,
     filter_data,

@@ -151,11 +151,21 @@ def main_script():
         default="slot",
         help='API style: slot filling or selection'
     )
+    parser.add_argument(
+        '--db-path',
+        type=str,
+        default=None,
+        help='Path to the BIRD database directory (overrides BIRD_DB_PATH env var)'
+    )
     args = parser.parse_args()
 
-    # Setup paths
-    db_path = Path(__file__).parent.parent.parent.parent / "db"
-    db_path = Path("/Users/belder/invocable-api-hub/db/")
+    # Setup paths: CLI arg > BIRD_DB_PATH env var > default relative location
+    if args.db_path:
+        db_path = Path(args.db_path)
+    elif os.environ.get('BIRD_DB_PATH'):
+        db_path = Path(os.environ['BIRD_DB_PATH'])
+    else:
+        db_path = Path(__file__).parent.parent.parent / "db"
     cache_path = db_path / 'cache' / args.api_style
 
     # Create output directories

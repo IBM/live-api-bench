@@ -41,10 +41,7 @@ class BirdDatabaseLoader(DatabaseLoader):
             key_data = json.load(f)
         
         # Grab the section for the database we are loading
-        for db in key_data:
-            if db['db_id'] == self.name:
-                key_data = db
-                break
+        db = next(d for d in key_data if d['db_id'] == self.name)
         
         tables = db['table_names_original']
         columns = pd.DataFrame(db['column_names_original'], columns=["table_id", "column_name"])

@@ -4,7 +4,7 @@ from typing import Callable
 import sqlglot
 
 from .database_loader import DatabaseLoader
-from .utils import get_join_sequences, get_tables_and_aliases
+from .sql_utils import get_join_sequences, get_tables_and_aliases
 from environment.m3.python_tools.tools.slot_filling_tools import (
     transform_data_to_substring,
     transform_data_to_absolute_value,
@@ -47,6 +47,22 @@ from environment.m3.python_tools.tools.tool_registry import (
 
 
 class SqlSelectionDatasetBuilder(SqlDatasetBuilder):
+    _TRANSFORM_OPERATORS: dict[str, Callable] = {
+        "substring": transform_data_to_substring,
+        "abs": transform_data_to_absolute_value,
+        "datetime": transform_data_to_datetime_part,
+    }
+    _FILTER_TOOL_NAMES: dict[str, str] = {
+        "greater_than_equal_to": "select_data_greater_than_equal_to",
+        "less_than_equal_to": "select_data_less_than_equal_to",
+        "not_equal_to": "select_data_not_equal_to",
+        "greater_than": "select_data_greater_than",
+        "less_than": "select_data_less_than",
+        "like": "select_data_like",
+        "in": "select_data_equal_to",
+        "equal_to": "select_data_equal_to",
+    }
+
     def __init__(self, loader: DatabaseLoader) -> None:
         super().__init__(loader)
         self.logger = logging.getLogger(__name__)
@@ -108,7 +124,7 @@ class SqlSelectionDatasetBuilder(SqlDatasetBuilder):
         api_calls = []
 
         limit = parsed_select['limit']
-        distinct = parsed_select['distinct']  # TODO: handle distinct
+        distinct = parsed_select['distinct']
 
         for idx, clause in enumerate(parsed_select['clauses']):
             col_name = clause[0]
@@ -336,17 +352,14 @@ class SqlSelectionDatasetBuilder(SqlDatasetBuilder):
                 if is_transform:
                     transform_args = {"data": table_name,
                                         "key_name": comparison_column}
+                    if comparison_operator not in self._TRANSFORM_OPERATORS:
+                        raise Exception(f"Transform operator {comparison_operator} not supported for selection dataset. ")
+                    transform_operator = self._TRANSFORM_OPERATORS[comparison_operator]
                     if comparison_operator == "substring":
                         transform_args['start_index'] = value[0]
                         transform_args['end_index'] = value[1]
-                        transform_operator = transform_data_to_substring
-                    elif comparison_operator == "abs":
-                        transform_operator = transform_data_to_absolute_value
                     elif comparison_operator == "datetime":
                         transform_args["datetime_pattern"] = value
-                        transform_operator = transform_data_to_datetime_part
-                    else:
-                        raise Exception(f"Transform operator {comparison_operator} not supported for sequencing dataset. ")
                     output_df = f'TRANSFORMED_DF_{str(i)}'
                     api = create_structured_api_call(
                         transform_operator, 
@@ -356,23 +369,9 @@ class SqlSelectionDatasetBuilder(SqlDatasetBuilder):
                     filter_args = {"data": table_name, "key_name": comparison_column, "value": value}
                     output_df = 'FILTERED_DF_'+str(i)
                     # Extract the appropriate comparison operator from the sql expression
-                    if comparison_operator == "greater_than_equal_to":
-                        filter_op = self.toolbox.tools["select_data_greater_than_equal_to"]
-                    elif comparison_operator == "less_than_equal_to":
-                        filter_op = self.toolbox.tools["select_data_less_than_equal_to"]
-                    elif comparison_operator == "not_equal_to":
-                        filter_op = self.toolbox.tools["select_data_not_equal_to"]
-                    elif comparison_operator == "greater_than":
-                        filter_op = self.toolbox.tools["select_data_greater_than"]
-                    elif comparison_operator == "less_than":
-                        filter_op = self.toolbox.tools["select_data_less_than"]
-                    elif comparison_operator == "between":
+                    if comparison_operator == "between":
                         raise Exception("Haven't implemented BETWEEN filter")
-                    elif comparison_operator == "like":
-                        filter_op = self.toolbox.tools["select_data_like"]
-                    else:
-                        assert comparison_operator in ["in", "equal_to"]
-                        filter_op = self.toolbox.tools["select_data_equal_to"]
+                    filter_op = self.toolbox.tools[self._FILTER_TOOL_NAMES[comparison_operator]]
 
                     api = create_structured_api_call(filter_op, filter_op.__name__, filter_args, output_df)
                 i+=1

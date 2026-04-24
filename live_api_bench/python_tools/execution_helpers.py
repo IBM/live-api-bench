@@ -1,15 +1,37 @@
 from collections import Counter
-from typing import Callable
+from typing import Any, Callable
 import json
+import os
 import numpy as np
 from pandas import DataFrame, Series
 from pydantic import RootModel
 
 from .sql_query_components import database_close_connection, database_get_connection, make_query_safe
-from .utils import safe_cast
+from .sql_utils import safe_cast
+
+DEFAULT_CONDENSE_LIMIT = 20
+
+
+def condense_output(data: Any, max_items: int = DEFAULT_CONDENSE_LIMIT) -> Any:
+    """Condense list and dict outputs for logging by limiting the number of items."""
+    if isinstance(data, list):
+        truncated = data[:max_items]
+        return [condense_output(item, max_items) for item in truncated]
+    elif isinstance(data, dict):
+        truncated_items = list(data.items())[:max_items]
+        return {k: condense_output(v, max_items) for k, v in truncated_items}
+    return data
+
+
+def load_skip_configuration() -> dict[str, Any]:
+    """Load high_memory_errors.json, mapping db names to indices or "all" to skip."""
+    config_path = os.path.join(os.path.dirname(__file__), "high_memory_errors.json")
+    with open(config_path) as f:
+        return json.load(f)
 
 
 def execute_single_api(api_name: str, api_args: dict, api_pool: dict[str, Callable]):
+    """Look up and call one API function by name. Called by execute_api_stack."""
     try:
         arg_fcn = api_pool[api_name]
     except:
@@ -18,6 +40,9 @@ def execute_single_api(api_name: str, api_args: dict, api_pool: dict[str, Callab
     return output
 
 def parse_argval(arg_val: str):
+    """Strip $…$ delimiters and split a variable reference into (label, optional_subkey).
+    Called by execute_api_stack to resolve inter-call dependencies and by validate_api_output
+    to identify terminal outputs."""
     arg_val = arg_val.lstrip("$").rstrip("$")
     subkey = None
     if '.' in arg_val:
@@ -27,6 +52,8 @@ def parse_argval(arg_val: str):
     return arg_val, subkey
 
 def execute_api_stack(apis: list[dict], api_pool: dict[str, Callable]):
+    """Execute a sequence of API calls, resolving $VAR$ and $VAR.subkey$ references
+    between calls. Called by validate_api_output."""
     output_dict = {}
     for api in apis:
         api_args_filled_in = {}
@@ -59,9 +86,8 @@ def execute_api_stack(apis: list[dict], api_pool: dict[str, Callable]):
 
 
 def validate_sql_output(database_file: str, query: str):
-    """
-    Run the sql query, simplify the result, check that it's jsonify-able
-    """
+    """Run the SQL query against the cached database, squeeze the result, and ensure
+    JSON serializability. Called by validate_output."""
     # First execute the sql query against the cached database
     # Note that this will fail if executed against the original database
     # The cached database has had all of the column names made safe, 
@@ -85,9 +111,8 @@ def validate_sql_output(database_file: str, query: str):
     return query_results
 
 def validate_api_output(required_api_calls: list, api_pool: dict[str, Callable]):
-    """
-    Run the api sequence, simplify the result, check that it's jsonify-able
-    """
+    """Execute the API call sequence, collect terminal outputs (labels not used as inputs
+    to later calls), and ensure JSON serializability. Called by validate_output."""
 
     # First check the api calls
     for api in required_api_calls:
@@ -127,6 +152,8 @@ def validate_api_output(required_api_calls: list, api_pool: dict[str, Callable])
     return output_results_list
 
 def simplify_and_check_serialization(api_results):
+    """Unwrap Pydantic models, squeeze single-element containers, and ensure JSON
+    serializability. Called by validate_api_output on each terminal output."""
     # Unwrap Pydantic RootModel instances first
     if isinstance(api_results, RootModel):
         api_results = api_results.root
@@ -164,6 +191,9 @@ def simplify_and_check_serialization(api_results):
 
 
 def check_equality_without_order(results_version_1, results_version_2) -> bool:
+    """Order-insensitive equality check for SQL vs API results. Called by validate_output. 
+    Sorting in SQL and pandas do not have equivalent behavior(for equal elements), hence
+    the need for order-insensitivity. """
 
     correct_answer = False
     if isinstance(results_version_1, list) and isinstance(results_version_2, list):
@@ -191,6 +221,8 @@ def check_equality_without_order(results_version_1, results_version_2) -> bool:
     return correct_answer
 
 def validate_output(database_file: str, query: str, required_api_calls: list, api_pool: dict[str, Callable]):
+    """Top-level validation entry point called from main_fcn.main(). Runs both the SQL
+    query and the API call sequence, then returns (correct, query_results, api_results)."""
     query_results = validate_sql_output(database_file=database_file, query=query)
     api_results = validate_api_output(required_api_calls, api_pool)
     correct_answer = check_equality_without_order(results_version_1=query_results, results_version_2=api_results)
