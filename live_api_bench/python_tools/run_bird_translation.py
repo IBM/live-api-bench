@@ -2,13 +2,16 @@
 import argparse
 import json
 import os
+import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from .bird_database_loader import BirdDatabaseLoader
-from .sql_selection_dataset_builder import SqlSelectionDatasetBuilder
-from .sql_slot_filling_dataset_builder import SqlSlotFillingDatasetBuilder
-from .main_fcn import main
+from live_api_bench.python_tools.bird_database_loader import BirdDatabaseLoader
+from live_api_bench.python_tools.compare_outputs import compare_file
+from live_api_bench.python_tools.sql_selection_dataset_builder import SqlSelectionDatasetBuilder
+from live_api_bench.python_tools.sql_slot_filling_dataset_builder import SqlSlotFillingDatasetBuilder
+from live_api_bench.python_tools.main_fcn import main
 
 
 ALL_BIRD_TRAIN = [
@@ -41,9 +44,9 @@ ALL_BIRD_DEV = [
 ]
 
 
-def get_datasets(mode: str, size: str, dataset_arg: str = None) -> tuple[List[str], str]:
+def get_datasets(mode: str, dataset_arg: str = None) -> tuple[List[str], str]:
     """
-    Determine which datasets to process based on mode, size, and dataset arguments.
+    Determine which datasets to process.
 
     Returns:
         tuple: (list of dataset names, mode string)
@@ -56,16 +59,12 @@ def get_datasets(mode: str, size: str, dataset_arg: str = None) -> tuple[List[st
         else:
             raise ValueError(f"Dataset '{dataset_arg}' not found in train or dev sets")
 
-    if mode == 'train' and size == 'large':
+    if mode == 'train':
         return ALL_BIRD_TRAIN, mode
-    elif mode == 'dev' and size == 'large':
+    elif mode == 'dev':
         return ALL_BIRD_DEV, mode
-    elif mode == 'train' and size == 'small':
-        return ["disney"], mode
-    elif mode == 'dev' and size == 'small':
-        return ['california_schools'], mode
 
-    raise ValueError(f"Invalid mode/size combination: {mode}/{size}")
+    raise ValueError(f"Invalid mode: {mode}")
 
 
 def load_query_data(dataset: str, mode: str, db_path: str) -> tuple[List[str], List[str]]:
@@ -133,13 +132,6 @@ def main_script():
         help='Run on the train or dev set'
     )
     parser.add_argument(
-        '-s', '--size',
-        type=str,
-        choices=['small', 'large'],
-        default='small',
-        help='Run all databases or a subset'
-    )
-    parser.add_argument(
         '-d', '--dataset',
         type=str,
         help='Process a specific dataset (overrides mode/size)'
@@ -148,8 +140,8 @@ def main_script():
         '-api', '--api_style',
         type=str,
         choices=["slot", "sel"],
-        default="slot",
-        help='API style: slot filling or selection'
+        default=None,
+        help='API style: slot filling or selection (default: both)'
     )
     parser.add_argument(
         '--db-path',
@@ -166,20 +158,25 @@ def main_script():
         db_path = Path(os.environ['BIRD_DB_PATH'])
     else:
         db_path = Path(__file__).parent.parent.parent / "db"
-    cache_path = db_path / 'cache' / args.api_style
+
+    api_styles = [args.api_style] if args.api_style else ["slot", "sel"]
 
     # Create output directories
-    for api_type in ["slot", "sel"]:
+    for api_type in api_styles:
         output_dir = Path("output") / api_type
         output_dir.mkdir(parents=True, exist_ok=True)
 
     # Determine which datasets to process
-    datasets, mode = get_datasets(args.mode, args.size, args.dataset)
+    datasets, mode = get_datasets(args.mode, args.dataset)
 
     if args.dataset:
         print(f"Processing single dataset: {args.dataset} ({mode} mode)")
     else:
-        print(f"Processing {len(datasets)} dataset(s) in {mode} mode ({args.size} size)")
+        print(f"Processing {len(datasets)} dataset(s) in {mode} mode")
+
+    all_results = []
+    comparisons = []
+    run_both = set(api_styles) == {"slot", "sel"}
 
     # Process each dataset
     for dataset in datasets:
@@ -195,26 +192,37 @@ def main_script():
             database_subdir = "train_databases" if mode == 'train' else "dev_databases"
             db_path_full = str(db_path / database_subdir)
 
-            # Initialize database loader
-            loader = BirdDatabaseLoader(
-                dataset,
-                db_path_full,
-                database_cache_location=str(cache_path)
-            )
+            for api_style in api_styles:
+                cache_path = db_path / 'cache' / api_style
+                loader = BirdDatabaseLoader(
+                    dataset,
+                    db_path_full,
+                    database_cache_location=str(cache_path)
+                )
 
-            # Generate slot-filling dataset
-            if args.api_style == "slot":
-                output_file_slot = f"output/{args.api_style}/{dataset}.json"
-                ds_builder_slot = SqlSlotFillingDatasetBuilder(loader)
-                main(dataset, output_file_slot, queries, questions, ds_builder_slot)
-                print(f"✓ Generated slot-filling dataset: {output_file_slot}")
+                output_file = f"output/{api_style}/{dataset}.json"
 
-            # Generate selection dataset
-            if args.api_style == "sel":
-                output_file_sel = f"output/{args.api_style}/{dataset}.json"
-                ds_builder_sel = SqlSelectionDatasetBuilder(loader)
-                main(dataset, output_file_sel, queries, questions, ds_builder_sel)
-                print(f"✓ Generated selection dataset: {output_file_sel}")
+                if api_style == "slot":
+                    ds_builder = SqlSlotFillingDatasetBuilder(loader)
+                else:
+                    ds_builder = SqlSelectionDatasetBuilder(loader)
+
+                result = main(dataset, output_file, queries, questions, ds_builder)
+                print(f"✓ Generated {api_style} dataset: {output_file}")
+
+                all_results.append({
+                    "dataset": dataset,
+                    "api_style": api_style,
+                    "output_file": output_file,
+                    **result,
+                })
+
+            if run_both:
+                print(f"\nComparing slot vs sel for {dataset}...")
+                slot_dir = Path("output") / "slot"
+                sel_dir = Path("output") / "sel"
+                comparison = compare_file(f"{dataset}.json", slot_dir=slot_dir, sel_dir=sel_dir)
+                comparisons.append(comparison)
 
         except Exception as e:
             print(f"✗ Failed to process {dataset}: {e}")
@@ -223,6 +231,17 @@ def main_script():
     print(f"\n{'='*60}")
     print(f"Successfully processed {len(datasets)} dataset(s)")
     print(f"{'='*60}")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = Path("output") / f"report_summary_{timestamp}.json"
+    report = {
+        "command": " ".join(sys.argv),
+        "results": all_results,
+        **({"comparisons": comparisons} if comparisons else {}),
+    }
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+    print(f"\nReport saved to {report_path}")
 
 
 if __name__ == "__main__":

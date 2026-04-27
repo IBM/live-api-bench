@@ -106,7 +106,7 @@ class SqlDatasetBuilder:
 
         return None
 
-    def parse_select_clause(self, ast: sqlglot.Expression) -> dict:
+    def parse_select_clause(self, ast: sqlglot.exp.Expression) -> dict:
 
         parsed_select = {
             'clauses': [],
@@ -229,7 +229,7 @@ class SqlDatasetBuilder:
         return parsed_clauses
 
     @staticmethod
-    def prune_where_tree(expr: sqlglot.Expression) -> bool:
+    def prune_where_tree(expr: sqlglot.exp.Expression) -> bool:
         if isinstance(expr.parent, sqlglot.expressions.Paren):
             return True
         if type(expr) in single_where_clause_types:
@@ -237,7 +237,7 @@ class SqlDatasetBuilder:
         return False
         
 
-    def parse_where_clause(self, ast: sqlglot.Expression) -> dict:
+    def parse_where_clause(self, ast: sqlglot.exp.Expression) -> dict:
 
         # Clauses will be a list of lists, where the top-level lists are connected by ORs, and the inner level lists by ANDs
         parsed_where = [[]]
@@ -264,7 +264,7 @@ class SqlDatasetBuilder:
         return parsed_where
 
 
-def identify_aggregation_expression(expression: sqlglot.Expression) -> Union[str, None]:
+def identify_aggregation_expression(expression: sqlglot.exp.Expression) -> Union[str, None]:
     """Legacy function for backward compatibility. Use identify_expression_structure instead."""
     agg = None
     if isinstance(expression, sqlglot.expressions.Count):
@@ -286,7 +286,7 @@ def identify_aggregation_expression(expression: sqlglot.Expression) -> Union[str
     return agg
 
 
-def identify_expression_structure(expression: sqlglot.Expression, sql_builder_instance) -> Union[dict, None]:
+def identify_expression_structure(expression: sqlglot.exp.Expression, sql_builder_instance) -> Union[dict, None]:
     """Parse SQL expression into structured dict representation.
 
     Returns dict with type and operands for aggregations, arithmetic, columns, and literals.
@@ -401,7 +401,7 @@ def identify_expression_structure(expression: sqlglot.Expression, sql_builder_in
     # Unsupported expression type
     return None
 
-def identify_transformation_expression(expression: sqlglot.Expression) -> Union[str, None]:
+def identify_transformation_expression(expression: sqlglot.exp.Expression) -> Union[str, None]:
     transform = None
     transform_args = {}
     if isinstance(expression, sqlglot.expressions.Abs):

@@ -55,7 +55,7 @@ def safe_cast(obj):
         return obj
 
 
-def get_tables_and_aliases(tree: sqlglot.Expression) -> dict[str, str]:
+def get_tables_and_aliases(tree: sqlglot.exp.Expression) -> dict[str, str]:
     # Get aliases
     alias_to_table_dict = {}
     tables = defaultdict(list)
@@ -79,7 +79,7 @@ def get_tables_and_aliases(tree: sqlglot.Expression) -> dict[str, str]:
     return alias_to_table_dict
 
 
-def get_join_sequences(tree: sqlglot.Expression) -> list[tuple[str]]:
+def get_join_sequences(tree: sqlglot.exp.Expression) -> list[tuple[str]]:
     # Identify columns and join types from the expression
     condition_sequences = []
     for j in tree.find_all(sqlglot.exp.Join):

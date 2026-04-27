@@ -323,7 +323,7 @@ class SqlSelectionDatasetBuilder(SqlDatasetBuilder):
 
         return api_calls
 
-    # def _process_groupby(self, ast: sqlglot.Expression, table_var: str) -> dict:
+    # def _process_groupby(self, ast: sqlglot.exp.Expression, table_var: str) -> dict:
     #     if 'group' not in ast.args:
     #         return []
 
@@ -333,7 +333,7 @@ class SqlSelectionDatasetBuilder(SqlDatasetBuilder):
     #     groupby_fcn = create_structured_api_call(group_data_by, group_data_by.__name__, groupby_args, 'GROUPED')
     #     return [groupby_fcn]
     
-    def process_where_clauses(self, ast: sqlglot.Expression, input_df_key: str) -> list[Callable]:
+    def process_where_clauses(self, ast: sqlglot.exp.Expression, input_df_key: str) -> list[Callable]:
         if 'where' not in ast.args:
             return []
         
@@ -390,7 +390,7 @@ class SqlSelectionDatasetBuilder(SqlDatasetBuilder):
             return all_where_apis[0]
 
 
-    def _process_orderby_clause(self, ast: sqlglot.Expression, input_df_key: str) -> list[Callable]:
+    def _process_orderby_clause(self, ast: sqlglot.exp.Expression, input_df_key: str) -> list[Callable]:
         """Process ORDER BY clause, including arithmetic expressions.
 
         Supports:

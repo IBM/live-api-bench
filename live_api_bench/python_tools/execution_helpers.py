@@ -80,6 +80,7 @@ def execute_api_stack(apis: list[dict], api_pool: dict[str, Callable]):
             output_dict[api['label']] = output
         except Exception as e:
             # If there is a bad function call, skip it and try the next one.
+            print(f"Error executing api stack: {str(e)}")
             output_dict[api['label']] = None
 
     return output_dict

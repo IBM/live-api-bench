@@ -88,7 +88,7 @@ class SqlSlotFillingDatasetBuilder(SqlDatasetBuilder):
         return required_api_calls, key_names_and_descriptions
 
 
-    # def _process_groupby(self, ast: sqlglot.Expression, table_var: str) -> dict:
+    # def _process_groupby(self, ast: sqlglot.exp.Expression, table_var: str) -> dict:
     #     if 'group' not in ast.args:
     #         return []
 
@@ -311,7 +311,7 @@ class SqlSlotFillingDatasetBuilder(SqlDatasetBuilder):
 
         return api_calls
 
-    def process_where_clauses(self, ast: sqlglot.Expression, input_df_key: str) -> list[Callable]:
+    def process_where_clauses(self, ast: sqlglot.exp.Expression, input_df_key: str) -> list[Callable]:
         if 'where' not in ast.args:
             return []
         
@@ -360,7 +360,7 @@ class SqlSlotFillingDatasetBuilder(SqlDatasetBuilder):
             return all_where_apis[0]
 
 
-    def _process_orderby_clause(self, ast: sqlglot.Expression, input_df_key: str) -> list[Callable]:
+    def _process_orderby_clause(self, ast: sqlglot.exp.Expression, input_df_key: str) -> list[Callable]:
         if 'order' not in ast.args:
             return []
 

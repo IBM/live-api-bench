@@ -65,22 +65,18 @@ python live_api_bench/python_tools/run_bird_translation.py [OPTIONS]
 | Flag | Choices | Default | Description |
 |------|---------|---------|-------------|
 | `-m`, `--mode` | `train`, `dev` | `dev` | Which BIRD split to use |
-| `-s`, `--size` | `small`, `large` | `small` | Process one representative database or the full set |
-| `-d`, `--dataset` | any BIRD db name | — | Process a single named database (overrides `-m`/`-s`) |
+| `-d`, `--dataset` | any BIRD db name | — | Process a single named database (overrides `-m`) |
 | `-api`, `--api_style` | `slot`, `sel` | `slot` | Output format: slot-filling or selection |
 | `--db-path` | any path | see above | Path to the BIRD database directory |
 
 ### Examples
 
 ```bash
-# Defaults: dev split, small (california_schools), slot-filling output
+# Defaults: all dev databases, slot-filling output
 python live_api_bench/python_tools/run_bird_translation.py
 
-# Train split, small (disney), selection output
+# All train databases, selection output
 python live_api_bench/python_tools/run_bird_translation.py -m train -api sel
-
-# All dev databases, slot-filling output
-python live_api_bench/python_tools/run_bird_translation.py -m dev -s large
 
 # Single specific database
 python live_api_bench/python_tools/run_bird_translation.py -d formula_1 -api slot
