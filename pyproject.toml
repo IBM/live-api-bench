@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "live-api-bench"
+version = "0.1.0"
+description = "Benchmark dataset generator converting BIRD SQL queries into API call sequences"
+requires-python = ">=3.10"
+dependencies = [
+    "vakra-benchmark @ git+https://github.com/IBM/vakra.git",
+    "pandas",
+    "numpy",
+    "sqlglot",
+    "pydantic",
+    "jinja2",
+    "python-dotenv",
+    "pyyaml",
+]
+
+[project.scripts]
+run-bird-translation = "live_api_bench.python_tools.run_bird_translation:main_script"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["live_api_bench*"]
