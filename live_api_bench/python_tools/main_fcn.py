@@ -115,7 +115,7 @@ def main(
 
             try:
                 es = str(e)
-                errors[es].append(idx)
+                errors[es].append(f"Query: {idx}: {query}")
             except Exception:
                 # Failed to record error, continue processing
                 pass
