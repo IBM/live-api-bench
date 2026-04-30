@@ -1,0 +1,249 @@
+
+import argparse
+import json
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import List
+
+from live_api_bench.python_tools.bird_database_loader import BirdDatabaseLoader
+from live_api_bench.python_tools.compare_outputs import compare_file
+from live_api_bench.python_tools.sql_selection_dataset_builder import SqlSelectionDatasetBuilder
+from live_api_bench.python_tools.sql_slot_filling_dataset_builder import SqlSlotFillingDatasetBuilder
+from live_api_bench.python_tools.main_fcn import main
+
+
+ALL_BIRD_TRAIN = [
+    'app_store', 'law_episode', 'citeseer', 'retail_world',
+    'college_completion', 'coinmarketcap', 'human_resources',
+    'beer_factory', 'food_inspection_2', 'authors', 'cars',
+    'book_publishing_company', 'codebase_comments', 'synthea',
+    'european_football_1', 'movielens', 'world_development_indicators',
+    'craftbeer', 'address', 'bike_share_1', 'mental_health_survey',
+    'food_inspection', 'mondial_geo', 'legislator', 'cookbook',
+    'olympics', 'soccer_2016', 'public_review_platform',
+    'movies_4', 'airline', 'video_games', 'university',
+    'movie_platform', 'sales', 'genes', 'software_company',
+    'hockey', 'menu', 'retail_complains', 'restaurant',
+    'car_retails', 'donor', 'talkingdata', 'cs_semester',
+    'language_corpus', 'ice_hockey_draft', 'world', 'regional_sales',
+    'retails', 'shakespeare', 'superstore', 'sales_in_weather',
+    'works_cycles', 'movie_3', 'social_media', 'chicago_crime',
+    'disney', 'books', 'image_and_language', 'professional_basketball',
+    'simpson_episodes', 'music_platform_2', 'student_loan',
+    'computer_student', 'shooting', 'music_tracker', 'trains',
+    'shipping', 'movie'
+]
+
+ALL_BIRD_DEV = [
+    'superhero', 'student_club', 'thrombosis_prediction',
+    'debit_card_specializing', 'formula_1', 'california_schools',
+    'toxicology', 'financial', 'european_football_2', 'card_games',
+    'codebase_community'
+]
+
+
+def get_datasets(mode: str, dataset_arg: str = None) -> tuple[List[str], str]:
+    """
+    Determine which datasets to process.
+
+    Returns:
+        tuple: (list of dataset names, mode string)
+    """
+    if dataset_arg:
+        if dataset_arg in ALL_BIRD_TRAIN:
+            return [dataset_arg], "train"
+        elif dataset_arg in ALL_BIRD_DEV:
+            return [dataset_arg], "dev"
+        else:
+            raise ValueError(f"Dataset '{dataset_arg}' not found in train or dev sets")
+
+    if mode == 'train':
+        return ALL_BIRD_TRAIN, mode
+    elif mode == 'dev':
+        return ALL_BIRD_DEV, mode
+
+    raise ValueError(f"Invalid mode: {mode}")
+
+
+def load_query_data(dataset: str, mode: str, db_path: str) -> tuple[List[str], List[str]]:
+    """
+    Load query data for a specific dataset and mode.
+
+    Returns:
+        tuple: (list of questions, list of SQL queries)
+    """
+    if mode == 'train':
+        query_dir = 'train_queries'
+        query_file = f"train_{dataset}.json"
+        backup_file = "train.json"
+    elif mode == 'dev':
+        query_dir = 'dev_queries'
+        query_file = f"dev_{dataset}.json"
+        backup_file = "dev.json"
+    else:
+        raise ValueError(f"Invalid mode: {mode}")
+
+    query_path = os.path.join(db_path, query_dir, query_file)
+    backup_query_path = os.path.join(db_path, backup_file)
+
+    # Try to load prefiltered queries
+    try:
+        with open(query_path) as f:
+            query_data = json.load(f)
+        print(f"Loaded {len(query_data)} prefiltered queries from {dataset} ({mode} mode)")
+    except FileNotFoundError:
+        # Fall back to global queries file and filter
+        try:
+            with open(backup_query_path) as f:
+                all_queries = json.load(f)
+
+            query_data = [q for q in all_queries if q['db_id'] == dataset]
+            print(f"Loaded {len(all_queries)} queries from {backup_file}, "
+                  f"filtered to {len(query_data)} for {dataset}")
+
+            # Save filtered queries for future use
+            os.makedirs(os.path.dirname(query_path), exist_ok=True)
+            with open(query_path, 'w') as f:
+                json.dump(query_data, f, indent=2)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Could not find query data for {dataset} in {mode} mode. "
+                f"Checked {query_path} and {backup_query_path}"
+            )
+
+    questions = [q['question'] for q in query_data]
+    queries = [q['SQL'] for q in query_data]
+
+    return questions, queries
+
+
+def main_script():
+    """Main entry point for the script."""
+    parser = argparse.ArgumentParser(
+        description="Load source nl2sql data and generate API-sequence data"
+    )
+    parser.add_argument(
+        '-m', '--mode',
+        type=str,
+        choices=['train', 'dev'],
+        default='dev',
+        help='Run on the train or dev set'
+    )
+    parser.add_argument(
+        '-d', '--dataset',
+        type=str,
+        help='Process a specific dataset (overrides mode/size)'
+    )
+    parser.add_argument(
+        '-api', '--api_style',
+        type=str,
+        choices=["slot", "sel"],
+        default=None,
+        help='API style: slot filling or selection (default: both)'
+    )
+    parser.add_argument(
+        '--db-path',
+        type=str,
+        default=None,
+        help='Path to the BIRD database directory (overrides BIRD_DB_PATH env var)'
+    )
+    args = parser.parse_args()
+
+    # Setup paths: CLI arg > BIRD_DB_PATH env var > default relative location
+    if args.db_path:
+        db_path = Path(args.db_path)
+    elif os.environ.get('BIRD_DB_PATH'):
+        db_path = Path(os.environ['BIRD_DB_PATH'])
+    else:
+        db_path = Path(__file__).parent.parent.parent / "db"
+
+    api_styles = [args.api_style] if args.api_style else ["slot", "sel"]
+
+    # Create output directories
+    for api_type in api_styles:
+        output_dir = Path("output") / api_type
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Determine which datasets to process
+    datasets, mode = get_datasets(args.mode, args.dataset)
+
+    if args.dataset:
+        print(f"Processing single dataset: {args.dataset} ({mode} mode)")
+    else:
+        print(f"Processing {len(datasets)} dataset(s) in {mode} mode")
+
+    all_results = []
+    comparisons = []
+    run_both = set(api_styles) == {"slot", "sel"}
+
+    # Process each dataset
+    for dataset in datasets:
+        print(f"\n{'='*60}")
+        print(f"Processing: {dataset}")
+        print(f"{'='*60}")
+
+        try:
+            # Load query data
+            questions, queries = load_query_data(dataset, mode, str(db_path))
+
+            # Determine database path
+            database_subdir = "train_databases" if mode == 'train' else "dev_databases"
+            db_path_full = str(db_path / database_subdir)
+
+            for api_style in api_styles:
+                cache_path = db_path / 'cache' / api_style
+                loader = BirdDatabaseLoader(
+                    dataset,
+                    db_path_full,
+                    database_cache_location=str(cache_path)
+                )
+
+                output_file = f"output/{api_style}/{dataset}.json"
+
+                if api_style == "slot":
+                    ds_builder = SqlSlotFillingDatasetBuilder(loader)
+                else:
+                    ds_builder = SqlSelectionDatasetBuilder(loader)
+
+                result = main(dataset, output_file, queries, questions, ds_builder)
+                print(f"✓ Generated {api_style} dataset: {output_file}")
+
+                all_results.append({
+                    "dataset": dataset,
+                    "api_style": api_style,
+                    "output_file": output_file,
+                    **result,
+                })
+
+            if run_both:
+                print(f"\nComparing slot vs sel for {dataset}...")
+                slot_dir = Path("output") / "slot"
+                sel_dir = Path("output") / "sel"
+                comparison = compare_file(f"{dataset}.json", slot_dir=slot_dir, sel_dir=sel_dir)
+                comparisons.append(comparison)
+
+        except Exception as e:
+            print(f"✗ Failed to process {dataset}: {e}")
+            raise
+
+    print(f"\n{'='*60}")
+    print(f"Successfully processed {len(datasets)} dataset(s)")
+    print(f"{'='*60}")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = Path("output") / f"report_summary_{timestamp}.json"
+    report = {
+        "command": " ".join(sys.argv),
+        "results": all_results,
+        **({"comparisons": comparisons} if comparisons else {}),
+    }
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+    print(f"\nReport saved to {report_path}")
+
+
+if __name__ == "__main__":
+    main_script()
+    
